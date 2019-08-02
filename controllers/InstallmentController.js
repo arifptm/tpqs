@@ -1,86 +1,83 @@
-const {Installment, Debt, Member} = require('../models');
+const {Installment, Debt, Member, Event} = require('../models');
 const config = require('../configs/config.js');
 const Moment = require('moment')
 const Sequelize = require('sequelize');
 const Op = Sequelize.Op;
-
+const {sequelize} = require('../models')
 
 
 module.exports = {	
 
-async autoCreate(req,res,next) {	
+	async create (req,res,next) {
 		try{
-			const today = Moment()
-			
-			const debts = await Debt.findAll({
-				where: { amount: {[Op.ne]: Sequelize.col('paid')} }
-				,include: [{ model: Installment, attributes: [] }]
-				,attributes: {include: [[Sequelize.fn("count", Sequelize.col("Installments.amount")), "installmentCount"]]}
-				,group: ['Debt.id']
-			})
-			
-			debts.forEach(function(debt){
-				const minPay = debt.amount/config.payTimes
+			const installment = await Installment.findOne({ where: { event_id: req.body.event_id, debt_id: req.body.debt_id } })						
 
-				if(debt.dataValues.installmentCount < config.payTimes){
+			if(installment){
+				res.status(400).send({ error: "Tagihan bulan ini telah dibuat"})
+			} else {				
 
-					Installment.findOne({
-						where: { debt_id: debt.id },
-						order: [['date', 'desc' ]]
-					})
-					.then((installment)=>{						
-						if(!installment || Moment(installment.date).format('MMYY') != Moment().format('MMYY') ){
-							Installment.create({
-								debt_id: debt.id,
-								date: today,
-								amount: minPay,	
-								note: debt.dataValues.installmentCount + 1
-							})
-						}
-						
-					})
-				} else {
-					console.log("Member " + debt.id + " has reach " + debt.dataValues.installmentCount + " installments")
-				}
+				const event = await Event.findOne({ where: { id: req.body.event_id }})
+				const debt = await Debt.findOne({where: {id: req.body.debt_id}})				
 				
-			})
+				if(!debt) {
+					res.status(404).send({ error: "Data not found"})
+				} else {
+					const minus = debt.amount - debt.paid					
+					if( minus > 0 ){
+						if(req.body.amount > minus) {
+							req.status(400).send("Cicilan maksimal adalah"+ toMoney(minus) )
+						}					
+						if(req.body.has_paid === true){
+							sequelize.transaction( t => {
+							 	return event.update({
+							 		installment: event.installment + req.body.amount,
+							 		cash: event.cash + req.body.amount
+							 	}, {transaction:t})
+							 	.then(()=>{						 		
+							 		return debt.update({ paid: paid + req.body.amount}, {transaction:t})
+							 		.then(()=>{
+							 			return Installment.create(req.body, {transaction:t})
+							 		})
+								})
+							})				
+							.then(result => {  res.send(result) })
+							.catch(err => { res.send(err) });
+						} else {
+							const newIns = await Installment.create(req.body)
+							res.send(newIns)
+						}
 
-			res.send(debts)
-
+					}	else {
+						res.status(400).send({ error: "Semua tagihan sudah dibuat"})
+					}
+				}
+			}
+		
 		} catch (err){
 			res.status(500).send({ error: err})
 		}
+	},
+
+	async show (req,res,next){
+		try {
+			const debt = await Debt.findByPk(req.params.debtId)
+			if (!debt) res.status(404).send({ error: 'Data not found'})
+			res.send(debt)
+		} catch(err){
+			res.status(500).send( {error: err} )
+		}
 	},	
 
-	// async create (req,res,next) {
-	// 	try{
-	// 		const member = await Member.findByPk(req.body.member_id)
-	// 		if(!member) res.status(404).send({ error: "Data not found"})
-			
-	// 		if(member.debt != 0) res.status(202).send({ error: "Failed to create new data"})
-			
-	// 		const debt = await Debt.create(req.body)
-	// 		await member.update({ debt: req.body.amount})			
-	// 		res.status(201).send(debt)
-	// 	} catch (err){
-	// 		res.status(500).send({ error: err})
-	// 	}
-	// },
-
-	// async show (req,res,next){
-	// 	try {
-	// 		const debt = await Debt.findByPk(req.params.debtId)
-	// 		if (!debt) res.status(404).send({ error: 'Data not found'})
-	// 		res.send(debt)
-	// 	} catch(err){
-	// 		res.status(500).send( {error: err} )
-	// 	}
-	// },	
-
-	async index (req,res){
+	async index (req,res,next){
 		try {
-			const installment = await Installment.findAll()
-			res.send(installment)
+			const installments = await Installment.findAll({
+				include: [
+					{	model:Debt, attributes: ['id'], include:[ { model:Member, attributes: ['id', 'fullname'] }] },
+					{ model:Event, attributes:['id', 'date'] }
+				],
+				order: [ [ Debt, Member, 'fullname', 'desc' ], ['id', 'desc']]
+			})
+			res.send(installments)
 		} catch ( err) {
 			res.status(500).send({ error: err})
 		}
@@ -89,29 +86,32 @@ async autoCreate(req,res,next) {
 	async update(req,res,next){
 		try{
 			const installment = await Installment.findByPk(req.params.installmentId)
-			if(!installment) res.status(404).send({ error: "Data not found"})
+			if(!installment) {
+				res.status(404).send({ error: "Data not found"})
+			} else {
 
-			const debt = await Debt.findByPk(req.body.debt_id)
-			if(!debt) res.status(404).send({ error: "Data not found"})
+				const oldEvent = await Event.findOne({ where: { id: installment.event_id }})
+				const newEvent = await Event.findOne({ where: { id: req.body.event_id }})
+				const debt = await Debt.findOne({where: {id: req.body.debt_id}})						
 
-			const debtPaidBefore = debt.paid
-			if( (installment.has_paid === true) && (req.body.has_paid === true) ){				
-				const debtPaidAfter = (debtPaidBefore - installment.amount) + req.body.amount
-				await debt.update({ paid: debtPaidAfter })
-			} 
+				const newDebtPaid = oldEvent ? debt.paid - installment.amount + req.body.amount : debt.paid + req.body.amount
+				
+				sequelize.transaction( t => {
+					return newEvent.update({
+			 			installment: newEvent.installment + req.body.amount,
+			 			cash:  newEvent.cash + req.body.amount
+			 		}, {transaction:t})
+					.then(()=>{
+						return debt.update({ paid: newDebtPaid }, {transaction:t})
+						.then(()=>{
+							return installment.update(req.body, {transaction:t})
+						})
+					})
+				})
+				.then(result => { res.send(result) })
+				.catch(err => { res.send(err) });
+			}
 			
-			if((installment.has_paid === true) && (req.body.has_paid === false) ){
-				const debtPaidAfter = debtPaidBefore - installment.amount
-				await debt.update({ paid: debtPaidAfter })
-			} 
-
-			if((installment.has_paid === false) && (req.body.has_paid === true)){
-				const debtPaidAfter = debtPaidBefore + req.body.amount
-				await debt.update({ paid: debtPaidAfter })
-			} 
-
-			await installment.update(req.body)
-			res.send(installment)
 		} catch (err){
 			res.status(500).send({ error: err})
 		}
@@ -120,20 +120,33 @@ async autoCreate(req,res,next) {
 	async delete (req,res,next){
 		try {
 			const installment = await Installment.findByPk(req.params.installmentId)
-			if (!installment) res.status(404).send({ error: 'Data not found'})
-			
-			await installment.destroy()
-			const debt = {}
-			if(installment.has_paid === true){
-				debt = await Debt.findByPk(installment.debt_id)
-				if(!debt) res.status(404).send({ error: "Data not found"})
-				const debtPaidBefore = debt.paid
-				const debtPaidAfter = debtPaidBefore - installment.amount
-				await debt.update({paid: debtPaidAfter})			
-			}
-
-			res.send({installment, debt})
-
+			if (!installment) {
+				res.status(404).send({ error: 'Data not found'})
+			} else {
+				const debt = await Debt.findByPk(installment.debt_id)
+				const opUpdate = (installment.has_paid === true) ? debt.paid - installment.amount : debt.paid
+				const event = await Event.findOne({ where: {id: installment.event_id} })
+				
+				if(installment.has_paid === true){
+					sequelize.transaction( t => {				
+						return debt.update({ paid: opUpdate },{ transaction:t})	
+						.then(()=>{
+							return event.update( { 
+								cash: event.cash - installment.amount,
+								installment: event.installment - installment.amount 
+							},{transaction:t })
+							.then(()=>{
+								return installment.destroy({ transaction: t})		
+							})						
+						})
+					})
+					.then(result => {res.send(result)})
+					.catch(err => {res.send(err)})		
+				} else {
+					installment.destroy()
+					res.send(installment)
+				}
+			}		
 		} catch(err) {
 			res.status(500).send({ error: err})
 		}
@@ -157,3 +170,7 @@ async autoCreate(req,res,next) {
 // 		console.log(err)
 // 	}		
 // }
+
+function toMoney(val){
+  return val.toString().replace(/(\d)(?=(\d{3})+(?!\d))/g, '$1.')
+}

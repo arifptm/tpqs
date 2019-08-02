@@ -1,4 +1,4 @@
-const {Member, Debt, Saving} = require('../models');
+const {Member, Debt, Saving, Event} = require('../models');
 const config = require('../configs/config.js');
 const {addImage} = require('../configs/multer.js');
 const fs = require('fs-extra');
@@ -19,6 +19,20 @@ module.exports = {
 
 	},
 
+	// async memberSavings(req, res, next){
+	// 	try{
+
+	// 		const member = await Member.findOne({
+	// 			where: {id: req.params.memberId},
+	// 			include: [ { model: Saving }]
+	// 		})
+	// 		res.send(member)
+
+	// 	} catch(err){
+	// 		res.status(500).send({ error: err})
+	// 	}
+	// },
+
 	async create (req,res,next) {		
 		try{
 			if(req.file){
@@ -26,7 +40,6 @@ module.exports = {
 					req.body['image'] = await addImage(req.file.filename, config.storage.members)
 				}
 			}			
-
 			const member = await Member.create(req.body)			
 			res.status(201).send(member)
 		} catch (err){
@@ -36,7 +49,7 @@ module.exports = {
 
 	async show (req,res,next){
 		try { 			
-			const member = await Member.findByPk(req.params.memberId)
+			const member = await Member.findAll({ where: {id: req.params.memberId}, order:[[ 'id', 'desc' ]]})
 			if (!member) res.status(404).send({ error: 'Data not found'})
 			res.send(member)
 		} catch(err){
@@ -47,15 +60,19 @@ module.exports = {
 	async index (req,res){
 		try {
 			const members = await Member.findAll({
-				include:  [{ model: Debt, attributes: [] }, { model: Saving, attributes: [] }]
-				,attributes: {include: [
-					[Sequelize.fn("sum", Sequelize.col("Debts.amount")), "debtSum"],
-					[Sequelize.fn("sum", Sequelize.col("Debts.paid")), "paidSum"],
-					[Sequelize.fn("sum", Sequelize.col("Savings.amount")), "savingSum"]
-				]}
-				,group: ['Member.id']
+				include:  [ { model: Saving, include: { model:Event, attributes: ['id', 'date'] }},  { model: Debt, include: { model:Event, attributes: ['id', 'date'] }}],
+				order: [
+					[{model: Saving}, {model: Event}, 'date', 'desc'], [{model: Saving}, 'id', 'desc'],
+					[{model: Debt}, {model: Event}, 'date', 'desc'], [{model: Debt}, 'id', 'desc']
+				] 
 			})
-			members.map((m)=> m.dataValues.restSum = (m.dataValues.debtSum - m.dataValues.paidSum) )
+			members.map((m)=> {
+				m.dataValues.debtSum = (m.dataValues.Debts.reduce((a,b)=> a + b['amount'],0 )) 
+				m.dataValues.paidSum = (m.dataValues.Debts.reduce((a,b)=> a + b['paid'],0 )) 
+				m.dataValues.savingSum = (m.dataValues.Savings.reduce((a,b)=> a + b['amount'],0 )) 				
+				m.dataValues.restSum = (m.dataValues.debtSum - m.dataValues.paidSum) 
+			})
+			// members.map((m)=> m.dataValues.restSum = (m.dataValues.debtSum - m.dataValues.paidSum) )
 			res.send(members)
 		} catch ( err) {
 			res.status(500).send({ error: err})
@@ -99,12 +116,14 @@ module.exports = {
 		try {
 			const member = await Member.findOne({
 				where: { id: req.params.memberId }
-				,include: [{ model: Saving, attributes: [] }]
-				,attributes: {include: [[Sequelize.fn("sum", Sequelize.col("Savings.amount")), "savingSum"]]}
+				,include: [{ model: Saving, include:{model: Event, attributes: ['date']} }]
+				,order: [[ { model: Saving }, 'id', 'desc' ]]
+				// ,attributes: {include: [[Sequelize.fn("sum", Sequelize.col("Savings.amount")), "savingSum"]]}
 			})						
 			if (!member.id) { 
 				res.status(404).send({ error: 'Data not found'})
-			} else {					
+			} else {
+				member.dataValues.savingSum  = member.Savings.reduce((a,b) => a + b['amount'], 0)				
 				res.send(member)
 			}
 		} catch(err) {
@@ -112,6 +131,24 @@ module.exports = {
 		}
 	},
 
+	async memberDebts (req,res,next){
+		try {
+			const member = await Member.findOne({
+				where: { id: req.params.memberId }
+				,include: [{ model: Debt, include:{model: Event, attributes: ['date']} }]
+				,order: [[ { model: Debt }, 'id', 'desc' ]]
+				// ,attributes: {include: [[Sequelize.fn("sum", Sequelize.col("Savings.amount")), "savingSum"]]}
+			})						
+			if (!member.id) { 
+				res.status(404).send({ error: 'Data not found'})
+			} else {
+				// member.dataValues.savingSum  = member.Savings.reduce((a,b) => a + b['amount'], 0)				
+				res.send(member)
+			}
+		} catch(err) {
+			res.status(500).send({ error: err})
+		}
+	}
 
 }
 

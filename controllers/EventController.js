@@ -1,4 +1,4 @@
-const {Event, Member, Debt, Installment} = require('../models');
+const {Event, Member, Debt, Installment, Saving} = require('../models');
 const Moment = require('moment')
 const config = require('../configs/config.js');
 const Sequelize = require('sequelize');
@@ -13,11 +13,12 @@ module.exports = {
 			const a = Moment(req.body.date).startOf('month')			
 			const b = Moment(req.body.date).endOf('month')
 			const event = await Event.findOne({ where: { date: {[Op.between]: [a,b]} }} )
+
 			if (event){
 				res.status(500).send("Bulan ini sudah ada pertemuan")
 			} else {				
 				const newEvent = await Event.create(req.body)
-				await autoCreateInstallment(newEvent.id)
+				await autoCreateInstallment(newEvent.date)
 				res.send(newEvent)
 			}
 		} catch (err){
@@ -28,10 +29,40 @@ module.exports = {
 	async index (req,res){
 		try {
 			const events = await Event.findAll({
-				order:[[ 'date', 'desc']]
+				order:[[ 'date', 'desc']],
+				include: [
+					{ model: Member, attributes: [ 'fullname' ] }					
+				]
+
+			})
+				
 				// where: { amount: {[Op.ne]: Sequelize.col('paid')} }
-				,include: [{ model: Member, attributes: ['fullname', 'alias'] }]
-			})			
+				// ,include: [					
+				// 	{ model: Debt,
+				// 		include: { model: Installment, where: { has_paid: true } }
+				// 	}
+				// ]
+				// ,attributes: {
+				// 	include: [[Sequelize.fn("sum", Sequelize.col("Debts.amount")), "debtSum"]]
+				// }
+
+
+					// { model: Member, 
+					// 	attributes: ['fullname', 'alias'] 
+					// },
+					// { model:Installment, where: {has_paid: true}, attributes:[]} 
+					// ,attributes: { include: [[Sequelize.fn("sum", Sequelize.col("Installment.amount")), "installmentSum"]] }
+					// 	,group: ['Debt.id']
+					// }
+					// { model: Saving, attributes: []}
+				
+				// ,attributes: {include: [
+					// [Sequelize.fn("sum", Sequelize.col("Debts.Installments.amount")), "installmentSum"]
+					// ,[Sequelize.fn("sum", Sequelize.col("Savings.amount")), "savingSum"]
+				// ]}
+
+				// ,group: ['Event.id']
+						
 			// debts.map((debt) => debt.dataValues.rest = debt.amount - debt.paid)
 
 			res.send(events)
@@ -40,6 +71,50 @@ module.exports = {
 		}
 	},
 
+	async delete (req,res,next){
+		try {
+			const event = await Event.findOne({
+				where: { id: req.params.eventId }
+				,include: [{ model: Debt, attributes: ['id']}]
+			})		
+			
+			if (!event) {				
+				res.status(404).send({ error: 'Data not found'})
+			} else {
+
+				await event.Debts.forEach(debt=>{
+					Installment.destroy({ where: {debt_id: debt.id} })
+				})				
+
+				await Debt.destroy({where: { event_id: event.id }})
+
+				event.destroy()
+
+				// if (event.Debt.Installment){
+				// 	// event.destroy().then(()=>res.send("Data deleted"))
+				// 	res.send('siap')
+				// } else {
+				// 	res.status(403).send('Child data exist')
+				// }
+				res.send(event)
+			}			
+
+		} catch(err) {
+			res.status(500).send({ error: err})
+		}
+	},
+
+	async dateList(req, res, next){
+		try{
+			const events = await Event.findAll({
+				attributes: [ 'date', 'id'],
+				order: [['date', 'desc']]
+			})
+			res.send(events)
+		} catch(err){
+			res.status(500).send({ error: err})
+		}
+	},
 
 
 
@@ -80,101 +155,55 @@ module.exports = {
 
 
 
-	// async update(req,res,next){
-	// 	try{
-	// 		const debt = await Debt.findByPk(req.params.debtId)
-	// 		if(!debt) res.status(404).send({ error: "Data not found"})
-
-	// 		const member = await Member.findByPk(req.body.member_id)
-	// 		if(!member) res.status(404).send({ error: "Data not found"})
-
-	// 		await debt.update(req.body)		
-	// 		await member.update({ debt: req.body.amount})	
-	// 		res.send(debt)
-	// 	} catch (err){
-	// 		res.status(500).send({ error: err})
-	// 	}
-	// },
-
-	// async delete (req,res,next){
-	// 	try {
-	// 		const debt = await Debt.findByPk(req.params.debtId)		
-	// 		if (!debt) res.status(404).send({ error: 'Data not found'})
-
-	// 		//gak bisa dihapus jika masih ada cicilan
-						
-	// 		// const member = await Member.findByPk(debt.member_id)
+	async update(req,res,next){
+		try{
+			const event = await Event.findByPk(req.params.eventId)
+			if(!event) { 
+				res.status(404).send({ error: "Data not found"})
+			} else {				
+				await event.update(req.body)
+				res.send(event)
+			}
+		} catch (err){
+			res.status(500).send({ error: err})
+		}
+	}
 
 
-	// 		// 	const balanceBefore = (member) ? member.saving : 0
-	// 		// 	const balanceAfter = balanceBefore + (saving.amount * -1)
-
-	// 		// 	await saving.destroy()
-	// 		// 	saving.dataValues.balanceBefore = balanceBefore
-	// 		// 	saving.dataValues.balanceAfter = balanceAfter
-	// 		// 	await member.update({ balance: balanceAfter})
-	// 		// 	res.send(saving)
-			
-
-	// 	} catch(err) {
-	// 		res.status(500).send({ error: err})
-	// 	}
-	// }
 }
 
-
-// async function sumSaving (memberId){
-// 	try {
-// 		const member = await Member.findOne({
-// 			where: { id: memberId }
-// 			,include: [{ model: Saving, attributes: [] }]			
-// 			,attributes: {include: [[Sequelize.fn("sum", Sequelize.col("Savings.amount")), "savingSum"]]}
-// 		})
-// 		if (!member.id) { 
-// 			return 0
-// 		} else {			
-// 			return member
-// 		}
-// 	} catch(err) {		
-// 		console.log(err)
-// 	}		
-// }
-
-async function autoCreateInstallment(meetingId) {
+async function autoCreateInstallment(event_date) {
 	try{
 		const debts = await Debt.findAll({
 			where: { amount: {[Op.ne]: Sequelize.col('paid')} }
-			,include: [{ model: Installment, attributes: [] }]
-			,attributes: {include: [[Sequelize.fn("count", Sequelize.col("Installments.amount")), "installmentCount"]]}
-			,group: ['Debt.id']
+			,include: [{ model: Installment, attributes: [] }]			
 		})
 		
 		debts.forEach(function(debt){
-			const minPay = debt.amount/config.payTimes
+			var minPayment = Math.trunc(debt.amount / debt.paytimes)
 
-			if(debt.dataValues.installmentCount < config.payTimes){
-
+			if(debt.amount > debt.paid ){
 				Installment.findOne({
-					where: { debt_id: debt.id },
-					order: [['date', 'desc' ]]
+					where: { debt_id: debt.id, billed_on: event_date}
 				})
-				.then((installment)=>{						
-					if(!installment || Moment(installment.date).format('MMYY') != Moment().format('MMYY') ){
+				.then(installment => {
+					if(!installment) 	{					
 						Installment.create({
-							debt_id: debt.id,
-							meeting_id: meetingId,
-							amount: minPay,	
-							note: debt.dataValues.installmentCount + 1
+							billed_on: event_date,
+							debt_id: debt.id,							
+							amount: minPayment
 						})
+						console.log("Tagihan baru berhasil telah dibuat")
+					} else {
+						console.log("Tagihan bulan ini telah dibuat")
 					}
 					
 				})
+				
 			} else {
-				console.log("Member " + debt.id + " has reach " + debt.dataValues.installmentCount + " installments")
-			}
-			
+				console.log("Tagihan cicilan sudah dibuat semua.")
+			}				
 		})
-
 		return
 
 	} catch (err){

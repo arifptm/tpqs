@@ -5,11 +5,13 @@ const config = require('../configs/config.js');
 const EventController = require('../controllers/EventController')
 const EventValidator = require('../validators/EventValidator')
 
+
+router.get('/date-list', EventController.dateList)
 router.post('/create', EventValidator.create, EventController.create);
 
-// router.get('/:meetingId', EventController.show);
+// router.get('/:eventId', EventController.show);
 router.get('/', EventController.index);
-// router.patch('/:meetingId', EventValidator.update, EventController.update);
-// router.delete('/:meetingId', EventController.delete);
+router.patch('/:eventId', EventValidator.update, EventController.update);
+router.delete('/:eventId', EventController.delete);
 
 module.exports = router;

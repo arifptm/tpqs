@@ -5,8 +5,8 @@ module.exports = {
 		const schema = Joi.object().keys({			
 			// fullname: Joi.string().min(6).regex(/^[\w\-\s]+$/).strip().required(),
 			// alias: Joi.string().min(4).regex(/^[\w\-\s]+$/).strip().required(),
-			date: Joi.date().required(),
-			member_id: Joi.number().integer().required()
+			// address: Joi.string().required(),
+			// enabled: Joi.boolean().required()
 		}).options({ allowUnknown: true })
 
 		const {error, value} = Joi.validate(req.body, schema)
@@ -15,8 +15,9 @@ module.exports = {
 
 	update (req, res, next) {		
 		const schema = Joi.object().keys({			
-			date: Joi.date().required(),
-			member_id: Joi.number().integer().required()
+			// fullname: Joi.string().min(6).regex(/^[\w\-\s]+$/).strip().required(),
+			// alias: Joi.string().min(4).regex(/^[\w\-\s]+$/).strip().required(),			
+			// address: Joi.string().required()
 		}).options({ allowUnknown: true })
 
 		const {error, value} = Joi.validate(req.body, schema)		

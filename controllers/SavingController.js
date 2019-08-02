@@ -2,6 +2,7 @@ const {Saving, Member, Event} = require('../models');
 const config = require('../configs/config.js');
 const Sequelize = require('sequelize');
 // const Op = Sequelize.Op;
+const {sequelize} = require('../models')
 
 
 
@@ -9,34 +10,40 @@ module.exports = {
 
 	async create (req,res,next) {
 		try{
-			const member = await Member.findByPk(req.body.member_id)
-			const balanceBefore = (member) ? member.saving : 0
-			const balanceAfter = balanceBefore + req.body.amount
+			const event = await Event.findByPk(req.body.event_id)
 			
-			const saving = await Saving.create(req.body)
-			saving.dataValues.balanceBefore = balanceBefore
-			saving.dataValues.balanceAfter = balanceAfter
-			await member.update({ balance: balanceAfter})			
-			res.status(201).send(saving)
+			sequelize.transaction( t => {			
+				return event.update({ 
+					saving: event.saving + req.body.amount,
+					cash: event.cash + req.body.amount
+				},{ transaction:t})
+				.then(()=>{
+					return Saving.create(req.body, { transaction: t})	
+				})
+			})
+
+			.then(result => { res.send(result) })
+			.catch(err => { res.send(err) });
 		} catch (err){
 			res.status(500).send({ error: err})
 		}
 	},
 
 	async show (req,res,next){
-		try {
-			const saving = await Saving.findByPk(req.params.savingId)
-			if (!saving) res.status(404).send({ error: 'Data not found'})
-			res.send(saving)
-		} catch(err){
-			res.status(500).send( {error: err} )
-		}
+		// try {
+		// 	const saving = await Saving.findByPk(req.params.savingId)
+		// 	if (!saving) res.status(404).send({ error: 'Data not found'})
+		// 	res.send(saving)
+		// } catch(err){
+		// 	res.status(500).send( {error: err} )
+		// }
 	},	
 
 	async index (req,res){
 		try {
 			const savings = await Saving.findAll({
-				include: [{ model: Member, attributes: ['fullname'] }, {model: Event, attributes:[ 'date' ]}]
+				include: [ {model: Member, attributes: ['id', 'fullname'] }, {model: Event, attributes:['id', 'date']}],
+				order: [['id', 'desc']]
 			})
 			res.send(savings)
 		} catch ( err) {
@@ -46,18 +53,20 @@ module.exports = {
 
 	async update(req,res,next){
 		try{
-			const saving = await Saving.findByPk(req.params.savingId)
-			if(!saving) res.status(404).send({ error: "Data not found"})
+			const saving = await Saving.findOne({ where: { id: req.params.savingId }})
+			const event = await Event.findByPk(saving.event_id)
 
-			const member = await Member.findByPk(req.body.member_id)
-			const balanceBefore = (member) ? member.saving : 0
-			const balanceAfter = balanceBefore - saving.amount + req.body.amount
-
-			await saving.update(req.body)
-			saving.dataValues.balanceBefore = balanceBefore
-			saving.dataValues.balanceAfter = balanceAfter
-			await member.update({ balance: balanceAfter})	
-			res.send(saving)			
+			sequelize.transaction( t => {
+				return event.update({ 
+					saving: event.saving - saving.amount + req.body.amount,
+					cash: event.cash - saving.amount + req.body.amount
+				},{ transaction:t})
+				.then(()=>{
+					return saving.update(req.body, { transaction: t})	
+				})
+			})				
+			.then(result => { res.send(result) })
+			.catch(err => { res.send(err) });		
 		} catch (err){
 			res.status(500).send({ error: err})
 		}
@@ -65,22 +74,20 @@ module.exports = {
 
 	async delete (req,res,next){
 		try {
-			const saving = await Saving.findByPk(req.params.savingId)		
-			if (!saving) { 
-				res.status(404).send({ error: 'Data not found'})
-			} else {				
-				const member = await Member.findByPk(saving.member_id)
+			const saving = await Saving.findOne({ where: { id: req.params.savingId }})
+			const event = await Event.findByPk(saving.event_id)
 
-				const balanceBefore = (member) ? member.saving : 0
-				const balanceAfter = balanceBefore + (saving.amount * -1)
-
-				await saving.destroy()
-				saving.dataValues.balanceBefore = balanceBefore
-				saving.dataValues.balanceAfter = balanceAfter
-				await member.update({ balance: balanceAfter})
-				res.send(saving)
-			}
-
+			sequelize.transaction( t => {
+				return event.update({ 
+					saving: event.saving - saving.amount,
+					cash: event.cash - saving.amount
+				},{ transaction:t})
+				.then(()=>{
+					return saving.destroy({ transaction: t})	
+				})
+			})				
+			.then(result => { res.send(result) })
+			.catch(err => { res.send(err) });	
 		} catch(err) {
 			res.status(500).send({ error: err})
 		}

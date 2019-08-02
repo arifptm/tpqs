@@ -5,7 +5,9 @@ module.exports = (sequelize, DataTypes) => {
 		note: { type: DataTypes.STRING},
 		debt: { type: DataTypes.DECIMAL, defaulValue: 0},
 		saving: { type: DataTypes.DECIMAL, defaulValue: 0},
-		taken: { type: DataTypes.DECIMAL, defaulValue: 0}
+		installment: { type: DataTypes.DECIMAL, defaulValue: 0},
+		other: { type: DataTypes.DECIMAL, defaulValue: 0},
+		cash: { type: DataTypes.DECIMAL, defaulValue: 0}
 	}, {
 		timestamps: false
 	})
@@ -13,7 +15,8 @@ module.exports = (sequelize, DataTypes) => {
 	Event.associate = function (models) {
     Event.belongsTo(models.Member, {foreignKey : 'member_id'})
     Event.hasMany(models.Debt, {foreignKey : 'event_id'})
-    Event.hasMany(models.Saving, {foreignKey : 'event_id'})
+    Event.hasMany(models.Saving, {foreignKey : 'event_id'})    
+    Event.hasMany(models.Installment, {foreignKey : 'event_id'})
   }
 
 	return Event
