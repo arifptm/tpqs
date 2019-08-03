@@ -75,7 +75,8 @@ module.exports = {
 					{	model:Debt, attributes: ['id'], include:[ { model:Member, attributes: ['id', 'fullname'] }] },
 					{ model:Event, attributes:['id', 'date'] }
 				],
-				order: [ [ Debt, Member, 'fullname', 'desc' ], ['id', 'desc']]
+				order: [ [ 'billed_on', 'desc' ]]
+				//order: [ [ Debt, Member, 'fullname', 'desc' ], ['id', 'desc']]
 			})
 			res.send(installments)
 		} catch ( err) {

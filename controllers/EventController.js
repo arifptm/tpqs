@@ -33,38 +33,7 @@ module.exports = {
 				include: [
 					{ model: Member, attributes: [ 'fullname' ] }					
 				]
-
-			})
-				
-				// where: { amount: {[Op.ne]: Sequelize.col('paid')} }
-				// ,include: [					
-				// 	{ model: Debt,
-				// 		include: { model: Installment, where: { has_paid: true } }
-				// 	}
-				// ]
-				// ,attributes: {
-				// 	include: [[Sequelize.fn("sum", Sequelize.col("Debts.amount")), "debtSum"]]
-				// }
-
-
-					// { model: Member, 
-					// 	attributes: ['fullname', 'alias'] 
-					// },
-					// { model:Installment, where: {has_paid: true}, attributes:[]} 
-					// ,attributes: { include: [[Sequelize.fn("sum", Sequelize.col("Installment.amount")), "installmentSum"]] }
-					// 	,group: ['Debt.id']
-					// }
-					// { model: Saving, attributes: []}
-				
-				// ,attributes: {include: [
-					// [Sequelize.fn("sum", Sequelize.col("Debts.Installments.amount")), "installmentSum"]
-					// ,[Sequelize.fn("sum", Sequelize.col("Savings.amount")), "savingSum"]
-				// ]}
-
-				// ,group: ['Event.id']
-						
-			// debts.map((debt) => debt.dataValues.rest = debt.amount - debt.paid)
-
+			})			
 			res.send(events)
 		} catch ( err) {
 			res.status(500).send({ error: err})
@@ -175,14 +144,15 @@ module.exports = {
 async function autoCreateInstallment(event_date) {
 	try{
 		const debts = await Debt.findAll({
-			where: { amount: {[Op.ne]: Sequelize.col('paid')} }
-			,include: [{ model: Installment, attributes: [] }]			
-		})
+			where: { amount: {[Op.ne]: Sequelize.col('paid')} },
+			include: [{ model: Installment }]
+		})		
 		
 		debts.forEach(function(debt){
 			var minPayment = Math.trunc(debt.amount / debt.paytimes)
+			var installmentSum = debt.Installments.reduce((a,b) => a + b['amount'],0 )
 
-			if(debt.amount > debt.paid ){
+			if(debt.amount > installmentSum ){
 				Installment.findOne({
 					where: { debt_id: debt.id, billed_on: event_date}
 				})
