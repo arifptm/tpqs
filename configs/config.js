@@ -1,4 +1,5 @@
 require('dotenv').config()
+
 var database = '';
 var password = '';
 var user = '';
@@ -16,6 +17,12 @@ if(process.env.DBS == 'mysql'){
 }
 
 module.exports = {
+
+	oldSaving: 8537000,
+	oldDebt: 22100000,
+	oldBalance: 6475000,
+	oldInout: 0,
+
 	port: 3000,
 	jwtSecret: process.env.JWT_SECRET,
 

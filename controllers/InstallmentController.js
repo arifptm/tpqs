@@ -9,51 +9,48 @@ const {sequelize} = require('../models')
 module.exports = {	
 
 	async create (req,res,next) {
-		try{
-			const installment = await Installment.findOne({ where: { event_id: req.body.event_id, debt_id: req.body.debt_id } })						
+		try{			
+			const debt = await Debt.findOne({ where: { id: req.body.debt_id } })	
+			if(!debt) return res.status(400).send({ error: "Data pinjaman tidak ditemukan"})
 
-			if(installment){
-				res.status(400).send({ error: "Tagihan bulan ini telah dibuat"})
-			} else {				
+			var billedOnArray = []
+			const installments = await Installment.findAll({ where: { debt_id: req.body.debt_id } })			
+			for (var i = installments.length - 1; i >= 0; i--) {
+				billedOnArray.push(installments[i].billed_on)
+			}
 
+			if(billedOnArray.includes(req.body.billed_on)) return res.status(400).send({ error: "Tagihan bulan ini telah dibuat"})				
+			
+			if(req.body.event_id !== null){
 				const event = await Event.findOne({ where: { id: req.body.event_id }})
-				const debt = await Debt.findOne({where: {id: req.body.debt_id}})				
-				
-				if(!debt) {
-					res.status(404).send({ error: "Data not found"})
-				} else {
-					const minus = debt.amount - debt.paid					
-					if( minus > 0 ){
-						if(req.body.amount > minus) {
-							req.status(400).send("Cicilan maksimal adalah"+ toMoney(minus) )
-						}					
-						if(req.body.has_paid === true){
-							sequelize.transaction( t => {
-							 	return event.update({
-							 		installment: event.installment + req.body.amount,
-							 		cash: event.cash + req.body.amount
-							 	}, {transaction:t})
-							 	.then(()=>{						 		
-							 		return debt.update({ paid: paid + req.body.amount}, {transaction:t})
-							 		.then(()=>{
-							 			return Installment.create(req.body, {transaction:t})
-							 		})
-								})
-							})				
-							.then(result => {  res.send(result) })
-							.catch(err => { res.send(err) });
-						} else {
-							const newIns = await Installment.create(req.body)
-							res.send(newIns)
-						}
+				if (!event) return res.send({ error: "Data kegiatan tidak ditemukan"})
 
-					}	else {
-						res.status(400).send({ error: "Semua tagihan sudah dibuat"})
-					}
-				}
+				const minus = debt.amount - debt.paid
+				if(req.body.amount > minus) return req.status(400).send("Cicilan maksimal adalah"+ toMoney(minus))
+						
+				sequelize.transaction( t => {
+				 	return event.update({
+				 		installment: event.installment + req.body.amount,
+				 		cash: event.cash + req.body.amount,
+				 		balance: event.balance + req.body.amount
+				 	}, {transaction:t})
+				 	.then(()=>{						 		
+				 		return debt.update({ paid: debt.paid + req.body.amount}, {transaction:t})
+				 		.then(()=>{
+				 			return Installment.create(req.body, {transaction:t})
+				 		})
+					})
+				})				
+				.then(result => {  res.send(result) })
+				.catch(err => { res.send(err) });				
+				
+			}	else {
+				const newInstallment = await Installment.create(req.body)
+				res.send(newInstallment)
 			}
 		
 		} catch (err){
+			console.log(err)
 			res.status(500).send({ error: err})
 		}
 	},
@@ -75,7 +72,7 @@ module.exports = {
 					{	model:Debt, attributes: ['id'], include:[ { model:Member, attributes: ['id', 'fullname'] }] },
 					{ model:Event, attributes:['id', 'date'] }
 				],
-				order: [ [ 'billed_on', 'desc' ]]
+				order: [ [ 'billed_on', 'desc' ],[Debt,Member,'fullname','asc']]
 				//order: [ [ Debt, Member, 'fullname', 'desc' ], ['id', 'desc']]
 			})
 			res.send(installments)
@@ -87,31 +84,92 @@ module.exports = {
 	async update(req,res,next){
 		try{
 			const installment = await Installment.findByPk(req.params.installmentId)
-			if(!installment) {
-				res.status(404).send({ error: "Data not found"})
-			} else {
+			if(!installment) return res.status(404).send({ error: "Data cicilan tidak ditemukan"})
+			
+			const debt = await Debt.findOne({where: {id: req.body.debt_id}})
+			if(!debt) return res.status(404).send({ error: "Data pinjaman tidak ditemukan"})
 
-				const oldEvent = await Event.findOne({ where: { id: installment.event_id }})
-				const newEvent = await Event.findOne({ where: { id: req.body.event_id }})
-				const debt = await Debt.findOne({where: {id: req.body.debt_id}})						
+			if(installment.event_id && req.body.event_id){
 
-				const newDebtPaid = oldEvent ? debt.paid - installment.amount + req.body.amount : debt.paid + req.body.amount
-				
 				sequelize.transaction( t => {
-					return newEvent.update({
-			 			installment: newEvent.installment + req.body.amount,
-			 			cash:  newEvent.cash + req.body.amount
-			 		}, {transaction:t})
-					.then(()=>{
-						return debt.update({ paid: newDebtPaid }, {transaction:t})
-						.then(()=>{
-							return installment.update(req.body, {transaction:t})
+					return Event.findOne({where:{id:installment.event_id}}, {transaction:t})
+					.then(oldE=>{
+						return oldE.update({
+							installment: oldE.installment - installment.amount,
+					 		cash:  oldE.cash - installment.amount,
+					 		balance: oldE.balance - installment.amount
+						}, {transaction:t}).then(()=>{
+							return Event.findOne({where:{id:req.body.event_id}}, {transaction:t})
+							.then(newE=>{
+								return newE.update({
+						 			installment: newE.installment + req.body.amount,
+						 			cash: newE.cash + req.body.amount,
+						 			balance: newE.balance + req.body.amount
+						 		}, { transaction:t})
+								.then(()=>{
+									return debt.update({ paid: debt.paid - installment.amount + req.body.amount }, {transaction:t})
+									.then(()=>{
+										return installment.update(req.body, {transaction:t})
+									})
+								})
+							})
 						})
 					})
 				})
 				.then(result => { res.send(result) })
-				.catch(err => { res.send(err) });
+				.catch(err => { res.send(err) });					
 			}
+
+			if(installment.event_id && !req.body.event_id){
+				
+				sequelize.transaction( t => {
+					return Event.findOne({where:{id:installment.event_id}},{transaction:t})
+					.then(event=>{					
+						return event.update({
+				 			installment: event.installment - installment.amount,
+				 			cash: event.cash - installment.amount,
+				 			balance: event.balance - installment.amount
+				 		}, { transaction:t})
+						.then(()=>{
+							return debt.update({ paid: debt.paid - installment.amount }, {transaction:t})
+							.then(()=>{
+								return installment.update(req.body, {transaction:t})
+							})
+						})
+					})
+				})
+				.then(result => { res.send(result) })
+				.catch(err => { res.send(err) });					
+
+			}
+
+			if(!installment.event_id && req.body.event_id){
+				sequelize.transaction( t => {
+					return Event.findOne({where:{id:req.body.event_id}},{transaction:t})
+					.then(event=>{						
+						return event.update({
+				 			installment: event.installment + req.body.amount,
+				 			cash: event.cash + req.body.amount,
+				 			balance: event.balance + req.body.amount
+				 		}, { transaction:t})
+						.then(()=>{
+							return debt.update({ paid: debt.paid + req.body.amount }, {transaction:t})
+							.then(()=>{
+								return installment.update(req.body, {transaction:t})
+							})
+						})
+					})	
+				})
+				.then(result => { res.send(result) })
+				.catch(err => { res.send(err) });					
+			}			
+
+			if(!installment.event_id && !req.body.event_id){
+				installment.update(req.body)
+				res.send(installment)
+			}
+				
+			
 			
 		} catch (err){
 			res.status(500).send({ error: err})
@@ -121,33 +179,32 @@ module.exports = {
 	async delete (req,res,next){
 		try {
 			const installment = await Installment.findByPk(req.params.installmentId)
-			if (!installment) {
-				res.status(404).send({ error: 'Data not found'})
-			} else {
-				const debt = await Debt.findByPk(installment.debt_id)
-				const opUpdate = (installment.has_paid === true) ? debt.paid - installment.amount : debt.paid
+			if (!installment) return res.status(404).send({ error: 'Data cicilan tidak ditemukan'})
+			
+			const debt = await Debt.findByPk(installment.debt_id)
+							
+			if(installment.event_id){
 				const event = await Event.findOne({ where: {id: installment.event_id} })
-				
-				if(installment.has_paid === true){
-					sequelize.transaction( t => {				
-						return debt.update({ paid: opUpdate },{ transaction:t})	
+				sequelize.transaction( t => {
+					return debt.update({ paid: debt.paid - installment.amount  },{ transaction:t})	
+					.then(()=>{
+						return event.update( { 							
+							installment: event.installment - installment.amount,
+							cash: event.cash - installment.amount,
+							balance: event.balance - installment.amount,
+						},{transaction:t })
 						.then(()=>{
-							return event.update( { 
-								cash: event.cash - installment.amount,
-								installment: event.installment - installment.amount 
-							},{transaction:t })
-							.then(()=>{
-								return installment.destroy({ transaction: t})		
-							})						
-						})
+							return installment.destroy({ transaction: t})		
+						})						
 					})
-					.then(result => {res.send(result)})
-					.catch(err => {res.send(err)})		
-				} else {
-					installment.destroy()
-					res.send(installment)
-				}
-			}		
+				})
+				.then(result => {res.send(result)})
+				.catch(err => {res.send(err)})		
+			} else {
+				installment.destroy()
+				res.send(installment)
+			}
+				
 		} catch(err) {
 			res.status(500).send({ error: err})
 		}

@@ -31,7 +31,8 @@ module.exports = {
 					return event.update({
 		  			debt: event.debt + req.body.amount,
 	  				other: event.other + (req.body.amount * 0.05),
-	  				cash: event.cash - (req.body.amount * 0.95)
+	  				cash: event.cash - (req.body.amount * 0.95),
+	  				balance: event.balance - (req.body.amount * 0.95)
 	  			}, {transaction: t})
 					.then(()=>{
 		  			return Debt.create(req.body, {transaction:t})
@@ -99,7 +100,8 @@ module.exports = {
 					return Event.update({
 			  		debt: debt.Event.debt - debt.amount + req.body.amount,
 			  		other: debt.Event.other - (debt.amount * 0.05) + (req.body.amount * 0.05) ,
-			  		cash: debt.Event.cash + (debt.amount * 0.95) - (req.body.amount * 0.95)
+			  		cash: debt.Event.cash + (debt.amount * 0.95) - (req.body.amount * 0.95),
+			  		balance: debt.Event.balance + (debt.amount * 0.95) - (req.body.amount * 0.95)
 			  	}, { where:{ id: debt.event_id }, transaction: t})
 			  	.then(()=>{ 
 						return Inout.update( {
@@ -141,7 +143,8 @@ module.exports = {
 						return Event.update({
 							debt: debt.Event.debt - debt.amount,
 							other: debt.Event.other - debt.amount * 0.05,
-							cash: debt.Event.cash + debt.amount * 0.95
+							cash: debt.Event.cash + debt.amount * 0.95,
+							balance: debt.Event.balance + debt.amount * 0.95
 						}, { where: { id: debt.Event.id}, transaction: t})
 						.then(()=>{
 							return Inout.destroy( { where: { debt_id: req.params.debtId}, transaction: t})
@@ -174,6 +177,8 @@ module.exports = {
 				include: [{
 					model: Installment, 
 					include: [ {model: Event, attributes: [ 'id', 'date']}]
+				}, {
+					model: Member, attributes: [ 'alias']
 				}],				
 				order: [[ Installment, {model: Event}, 'date', 'desc' ]]
 			})

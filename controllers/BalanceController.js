@@ -10,12 +10,10 @@ module.exports = {
 	async getBalance (req,res,next) {
 		try {
 			const event = await Event.findAll({
-				attributes: { include: [
-						[ Sequelize.fn("sum", Sequelize.col("cash")), "balance" ]
-					]
-				}
+				attributes: [[ Sequelize.fn("sum", Sequelize.col("cash")), "balance" ]]
 			})
-			res.send(event)
+
+			res.send(event[0])
 
 		} catch(err){
 			res.status(500).send({ error: err})

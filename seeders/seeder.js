@@ -40,7 +40,7 @@ module.exports = {
       ]
 
       const events = [
-        { "id": 1, "member_id": 15, "date": "2017-07-21", "debt": 19350000, "saving": 8987000, "installment": 2750000, "other": 700000, "cash": 2875000 }
+        { "id": 1, "member_id": 15, "date": "2017-07-21", "debt": 19350000, "saving": 8987000, "installment": 2750000, "other": 700000, "cash": -3350000, "last_balance": 6225000, "balance": 2875000 }
       ]
 
       const savings = [
@@ -70,8 +70,7 @@ module.exports = {
         { "id": 24, "event_id": 1, "member_id": 15, "amount": 50000},
         { "id": 25, "event_id": 1, "member_id": 19, "amount": 50000},
         { "id": 26, "event_id": 1, "member_id": 20, "amount": 100000},
-        { "id": 27, "event_id": 1, "member_id": 6, "amount": -1000000},
-        { "id": 28, "event_id": 1, "member_id": 15, "amount": 90000},
+        { "id": 27, "event_id": 1, "member_id": 6, "amount": -1000000},        
         { "id": 29, "event_id": 1, "member_id": 9, "amount": -250000}
       ]
 

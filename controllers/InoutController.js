@@ -7,45 +7,27 @@ const {sequelize} = require('../models')
 
 module.exports = {	
 
-	// async create (req,res,next) {
-	// 	try{
+	async create (req,res,next) {
+		try {			
+			const event = await Event.findOne({where: { id: req.body.event_id} })
 
-	// 		const debt = await Debt.findOne({
-	// 			where: {member_id: req.body.member_id},
-	// 			include: [{ model: Member, attributes: ['alias']}],
-	// 			order: [[ 'event_id', 'DESC' ]]
-	// 		})
-			
-	// 		if( !debt || ((debt.amount - debt.paid) == 0) ){
-				 
-	// 			sequelize.transaction( t => {
-				 		
-	// 			  return Debt.create(req.body, {transaction: t})
-	// 			  .then(debt=>{  Inout.create({ note: "Sumbangan RT ( "+ debt.Member.alias +"|"+ debt.amount +" )", amount: debt.amount*0.05, event_id: debt.event_id}, {transaction: t})
-	// 				  .then(debt => {
-	// 				  	return Event.findOne({ where: { id: req.body.event_id }}, { transaction: t})
-	// 				  	.then(event=>{
-	// 				  		return event.update( {debt: parseInt(event.debt) + parseInt(req.body.amount) }, {transaction: t})
-	// 				  	})
-	// 				  })
-	// 				})
-	// 			})				
-	// 			.then(result => {  
-	// 				res.send(result)
-	// 			})
-	// 			.catch(err => {
-	// 				res.send(err)
-	// 			});
-
-	// 		} else {
-	// 			res.status(403).send({ error: "Tidak diijinkan, periksa data pinjaman."})
-	// 		}
-
+			sequelize.transaction( t => {
+				return event.update({ 
+					other: event.inout + req.body.amount, 
+					cash: event.cash + req.body.amount,
+					balance: event.balance + req.body.amount
+				}, { transaction:t })
+				.then(()=>{
+					return Inout.create(req.body, {transaction: t})
+				})
+			})				
+			.then(result => { res.send(result) })
+			.catch(err => { res.send(err) })
 		
-	// 	} catch (err){
-	// 		res.status(500).send({ error: err})
-	// 	}
-	// },
+		} catch (err){
+			res.status(500).send({ error: err})
+		}
+	},
 
 	// async show (req,res,next){
 	// 	try {

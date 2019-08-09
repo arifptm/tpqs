@@ -3,6 +3,7 @@ const Moment = require('moment')
 const config = require('../configs/config.js');
 const Sequelize = require('sequelize');
 const Op = Sequelize.Op;
+const {sequelize} = require('../models')
 
 
 
@@ -13,14 +14,18 @@ module.exports = {
 			const a = Moment(req.body.date).startOf('month')			
 			const b = Moment(req.body.date).endOf('month')
 			const event = await Event.findOne({ where: { date: {[Op.between]: [a,b]} }} )
+			if (event) return res.status(500).send("Bulan ini sudah ada pertemuan")
 
-			if (event){
-				res.status(500).send("Bulan ini sudah ada pertemuan")
-			} else {				
-				const newEvent = await Event.create(req.body)
-				await autoCreateInstallment(newEvent.date)
-				res.send(newEvent)
-			}
+			const lastEvent = await Event.findOne({ order: [[ 'date', 'desc']] })
+			if (!lastEvent) return res.status(500).send("Belum pernah ada pertemuan")
+			
+			req.body['last_balance'] = lastEvent.balance
+			req.body['balance'] = lastEvent.balance
+
+			const newEvent = await Event.create(req.body)
+			await autoCreateInstallment(newEvent.date)
+			res.send(newEvent)
+			
 		} catch (err){
 			res.status(500).send({ error: err})
 		}
@@ -45,28 +50,17 @@ module.exports = {
 			const event = await Event.findOne({
 				where: { id: req.params.eventId }
 				,include: [{ model: Debt, attributes: ['id']}]
-			})		
-			
-			if (!event) {				
-				res.status(404).send({ error: 'Data not found'})
-			} else {
+			})					
 
-				await event.Debts.forEach(debt=>{
-					Installment.destroy({ where: {debt_id: debt.id} })
-				})				
+			if (!event) return res.status(404).send({ error: 'Data not found'})
 
-				await Debt.destroy({where: { event_id: event.id }})
+			await event.Debts.forEach(debt=>{
+				Installment.destroy({ where: {debt_id: debt.id} })
+			})							
+			await Debt.destroy({where: { event_id: event.id }})
+			event.destroy()
 
-				event.destroy()
-
-				// if (event.Debt.Installment){
-				// 	// event.destroy().then(()=>res.send("Data deleted"))
-				// 	res.send('siap')
-				// } else {
-				// 	res.status(403).send('Child data exist')
-				// }
-				res.send(event)
-			}			
+			res.send(event)
 
 		} catch(err) {
 			res.status(500).send({ error: err})
@@ -86,8 +80,6 @@ module.exports = {
 	},
 
 
-
-
 // where: { amount: {[Op.ne]: Sequelize.col('paid')} }
 // 		member_id: { type: DataTypes.INTEGER, allowNull: false },
 // 		date: { type: DataTypes.DATE, allowNull: false },
@@ -95,21 +87,6 @@ module.exports = {
 // 		debt: { type: DataTypes.DECIMAL, defaulValue: 0},
 // 		saving: { type: DataTypes.DECIMAL, defaulValue: 0},
 // 		taken: { type: DataTypes.DECIMAL, defaulValue: 0}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 	// async show (req,res,next){
@@ -127,19 +104,22 @@ module.exports = {
 	async update(req,res,next){
 		try{
 			const event = await Event.findByPk(req.params.eventId)
-			if(!event) { 
-				res.status(404).send({ error: "Data not found"})
-			} else {				
-				await event.update(req.body)
-				res.send(event)
-			}
+			if(!event) return res.status(404).send({ error: "Data not found"})
+
+			sequelize.transaction( t => {
+				return Installment.update({ billed_on: req.body.date },{ where: {billed_on: event.date}, transaction: t })
+				.then(()=>{
+					return event.update(req.body, {transaction: t})
+				})			
+			})				
+			.then(result => { res.send(result) })
+			.catch(err => { res.send(err) })
+			
 		} catch (err){
 			res.status(500).send({ error: err})
 		}
-	}
-
-
-}
+	}	
+} 
 
 async function autoCreateInstallment(event_date) {
 	try{
@@ -151,8 +131,9 @@ async function autoCreateInstallment(event_date) {
 		debts.forEach(function(debt){
 			var minPayment = Math.trunc(debt.amount / debt.paytimes)
 			var installmentSum = debt.Installments.reduce((a,b) => a + b['amount'],0 )
-
-			if(debt.amount > installmentSum ){
+			var rest = debt.amount - installmentSum
+			if(rest > 0 ){
+				var toPay = (rest < minPayment) ? rest : minPayment
 				Installment.findOne({
 					where: { debt_id: debt.id, billed_on: event_date}
 				})
@@ -161,7 +142,7 @@ async function autoCreateInstallment(event_date) {
 						Installment.create({
 							billed_on: event_date,
 							debt_id: debt.id,							
-							amount: minPayment
+							amount: toPay
 						})
 						console.log("Tagihan baru berhasil telah dibuat")
 					} else {

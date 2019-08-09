@@ -7,6 +7,8 @@ module.exports = (sequelize, DataTypes) => {
 		saving: { type: DataTypes.DECIMAL, defaulValue: 0},
 		installment: { type: DataTypes.DECIMAL, defaulValue: 0},
 		other: { type: DataTypes.DECIMAL, defaulValue: 0},
+		last_balance: { type: DataTypes.DECIMAL, defaulValue: 0},
+		balance: { type: DataTypes.DECIMAL, defaulValue: 0},
 		cash: { type: DataTypes.DECIMAL, defaulValue: 0}
 	}, {
 		timestamps: false

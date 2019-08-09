@@ -15,7 +15,8 @@ module.exports = {
 			sequelize.transaction( t => {			
 				return event.update({ 
 					saving: event.saving + req.body.amount,
-					cash: event.cash + req.body.amount
+					cash: event.cash + req.body.amount,
+					balance: event.balance + req.body.amount
 				},{ transaction:t})
 				.then(()=>{
 					return Saving.create(req.body, { transaction: t})	
@@ -43,7 +44,7 @@ module.exports = {
 		try {
 			const savings = await Saving.findAll({
 				include: [ {model: Member, attributes: ['id', 'fullname'] }, {model: Event, attributes:['id', 'date']}],
-				order: [['id', 'desc']]
+				order: [[Event, 'date', 'desc'], [ Member, 'fullname', 'asc']]
 			})
 			res.send(savings)
 		} catch ( err) {
@@ -55,11 +56,13 @@ module.exports = {
 		try{
 			const saving = await Saving.findOne({ where: { id: req.params.savingId }})
 			const event = await Event.findByPk(saving.event_id)
+			const newAmount = req.body.amount - saving.amount
 
 			sequelize.transaction( t => {
 				return event.update({ 
-					saving: event.saving - saving.amount + req.body.amount,
-					cash: event.cash - saving.amount + req.body.amount
+					saving: event.saving + newAmount,
+					cash: event.cash + newAmount,
+					balance: event.balance + newAmount
 				},{ transaction:t})
 				.then(()=>{
 					return saving.update(req.body, { transaction: t})	
@@ -80,7 +83,8 @@ module.exports = {
 			sequelize.transaction( t => {
 				return event.update({ 
 					saving: event.saving - saving.amount,
-					cash: event.cash - saving.amount
+					cash: event.cash - saving.amount,
+					balance: event.balance - saving.amount
 				},{ transaction:t})
 				.then(()=>{
 					return saving.destroy({ transaction: t})	

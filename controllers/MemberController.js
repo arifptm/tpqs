@@ -10,7 +10,8 @@ module.exports = {
 	async nameList(req, res, next){
 		try{
 			const members = await Member.findAll({
-				attributes: [ 'fullname', 'alias', 'id']
+				attributes: [ 'fullname', 'alias', 'id'],
+				order: [ 'fullname']
 			})
 			res.send(members)
 		} catch(err){
